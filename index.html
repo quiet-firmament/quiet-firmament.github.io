@@ -6,18 +6,12 @@
 <link rel="icon" href="data:,">
 <title>Firmament</title>
 <script>
-const FIRMAMENT = '0x0000000000000000000000000000000000000000';    // the deployed square
-const CHAIN = 1;                                                    // its chain id
+const FIRMAMENT = '0x924aE270D94dA8339F85602b42aC99a6949E66b7';
+const CHAIN = 1;
 
-// The card's link ends in #<shadow>. What follows # never leaves this device: no server ever sees it.
-// With it and the first address of these words (whichever account the wallet keeps it under) the page finds its
-// star by itself. The member types nothing.
-// This page speaks to no one but the wallet (window.ethereum).
+const PIERCE = '0x82b8c98d';
+const STARS = '0x685c6342';
 
-const PIERCE = '0x82b8c98d';    // cast sig "pierce(uint256,uint256,address,uint8,bytes32,bytes32)"
-const STARS = '0x685c6342';     // cast sig "stars(uint256)"
-
-// what the wallet signs, exactly as the contract rebuilds it
 const typed = (star, until) => ({
   types: {
     EIP712Domain: [{ name: 'name', type: 'string' }, { name: 'chainId', type: 'uint256' }, { name: 'verifyingContract', type: 'address' }],
@@ -29,9 +23,8 @@ const typed = (star, until) => ({
 });
 
 const later = days => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
-const endOf = day => Date.parse(day + 'T23:59:59Z') / 1000;       // a day, not the second you signed
+const endOf = day => Date.parse(day + 'T23:59:59Z') / 1000;
 
-// 0x r s v; some wallets say v = 0/1 where ecrecover wants 27/28
 function split(sig) {
   const h = sig.replace(/^0x/, '');
   if (!/^[0-9a-f]{130}$/i.test(h)) throw Error('The wallet returned an unexpected signature: ' + sig);
@@ -39,7 +32,6 @@ function split(sig) {
   return { v: v < 27 ? v + 27 : v, r: '0x' + h.slice(0, 64), s: '0x' + h.slice(64, 128) };
 }
 
-// what the member forwards when the eye cannot pay: the artist carries it with one paste
 const block = p => `Firmament ${FIRMAMENT} chain ${CHAIN}
 star   ${p.star}
 until  ${p.until}
@@ -52,7 +44,7 @@ const word = x => (typeof x === 'string' ? x.slice(2) : BigInt(x).toString(16)).
 const calldata = p => PIERCE + [p.star, p.until, p.shadow, p.v, p.r, p.s].map(word).join('');
 const hex = n => '0x' + BigInt(n).toString(16);
 
-function keccak(data) {                                             // keccak-256, hex in, hex out
+function keccak(data) {
   const M = 2n ** 64n - 1n, rot = (a, n) => (a << BigInt(n) | a >> BigInt(64 - n)) & M;
   const input = Uint8Array.from(data.slice(2).match(/../g) || [], b => parseInt(b, 16));
   const rate = 136, s = Array(25).fill(0n), p = new Uint8Array(Math.ceil((input.length + 1) / rate) * rate);
@@ -76,39 +68,30 @@ function keccak(data) {                                             // keccak-25
   return '0x' + s.slice(0, 4).map(l => [0, 1, 2, 3, 4, 5, 6, 7].map(b => (l >> BigInt(8 * b) & 255n).toString(16).padStart(2, '0')).join('')).join('');
 }
 
-// the shadow: the address at m/44'/60'/36525'/0/0 of the same words, which no wallet shows.
-// The card's link carries it as #0x… (or #shadow=0x…). Typed by hand it may come as the whole link, or with spaces.
 function shadowOf(text) {
   const all = String(text), t = all.slice(all.lastIndexOf('#') + 1).replace(/\s+/g, '').replace(/^shadow=/i, '');
   if (/^0x[0-9a-f]{40}$/i.test(t)) return t.toLowerCase();
 }
-const veilOf = (eye, shadow) => keccak('0x' + word(eye) + word(shadow));    // keccak256(abi.encode(eye, shadow))
+const veilOf = (eye, shadow) => keccak('0x' + word(eye) + word(shadow));
 const place = veil => [BigInt(veil) % 36525n, (BigInt(veil) >> 128n) % 36525n];
 
-// one star as stars(i) returns it: (veil, eye, dawn)
 const starOf = (i, w) => ({ i, veil: '0x' + w.slice(2, 66).toLowerCase(), eye: '0x' + w.slice(90, 130).toLowerCase(), dawn: Number(BigInt('0x' + w.slice(130, 194))) });
 const lit = star => BigInt(star.eye) !== 0n;
 
-// Everything an error says, however deeply the wallet wrapped it.
 function told(e, depth = 0) {
   if (e == null || depth > 5) return '';
   if (typeof e !== 'object') return String(e);
   const said = ['message', 'data', 'error', 'originalError', 'cause'].map(k => told(e[k], depth + 1)).filter(Boolean).join(' · ');
   return said || (depth ? '' : String(e));
 }
-// A revert is an answer (past the last star, or a pierce the chain refuses); anything else is the network failing.
 const reverted = e => /revert|0x4e487b71/i.test(told(e));
-const refused = e => e?.code === 4001 || e?.data?.code === 4001;    // the member said no in the wallet
+const refused = e => e?.code === 4001 || e?.data?.code === 4001;
 
-// the page. Reads go through the wallet; nothing is sent anywhere else.
-
-let eth, eye, shadow, linked, found, signed, open, busy, known;    // known: the whole sky, as last read
+let eth, eye, shadow, linked, found, signed, open, busy, known;
 const $ = id => document.getElementById(id);
 const say = text => $('say').textContent = text;
 const ask = (method, ...params) => eth.request({ method, params });
 
-// Some wallets (MetaMask on a phone among them, at times) put window.ethereum in only after the page has loaded:
-// it is looked for again at every press of the button.
 function reach() {
   if (eth || !(eth = window.ethereum)) return eth;
   eth.on?.('accountsChanged', ([a]) => {
@@ -138,7 +121,7 @@ function take() {
 
 function forget() {
   found = signed = open = undefined;
-  for (const id of ['light', 'hole']) $(id).setAttribute('visibility', 'hidden');     // another wallet, another star
+  for (const id of ['light', 'hole']) $(id).setAttribute('visibility', 'hidden');
   show();
 }
 
@@ -176,11 +159,10 @@ async function go() {
   if (!lit(found)) return pierce();
 }
 
-// Every star, to the very end, whether or not it is found: the node sees the whole sky read, never which star was sought.
 async function read(i) {
   let w;
   try { w = await ask('eth_call', { to: FIRMAMENT, data: STARS + word(i) }, 'latest'); } catch (e) {
-    if (reverted(e)) return null;                                   // past the last star
+    if (reverted(e)) return null;
     throw Error('Your wallet’s network did not answer, so the sky could not be read to the end. Please try again. (' + told(e) + ')');
   }
   if (!/^0x[0-9a-f]{192}$/i.test(w)) throw Error('This page is set up wrong: there is no Firmament at its address on this network.');
@@ -202,23 +184,19 @@ async function scan(accounts) {
   await ready();
   forget();
   const all = await sky();
-  if (eye !== me) return;                                           // the wallet changed while the sky was read
+  if (eye !== me) return;
   known = all;
   look(accounts || [me]);
 }
 
-// "Search again": the words' first address may be another account of the wallet. The member picks the accounts
-// the page may see, and each is looked for in the sky already read; if none has a place there, in the whole sky
-// read again: the place may have been painted since.
 async function again() {
-  await ask('wallet_requestPermissions', { eth_accounts: {} }).catch(e => { if (refused(e)) throw e; });   // not every wallet has it
+  await ask('wallet_requestPermissions', { eth_accounts: {} }).catch(e => { if (refused(e)) throw e; });
   const all = await ask('eth_accounts').catch(() => []), accounts = all.length ? all : [eye];
   forget();
   look(accounts);
   if (!found) await scan(accounts);
 }
 
-// the first of these addresses with a place in the sky, and its star: once, and never again
 function look(accounts) {
   const hit = accounts.map(a => [a, known.filter(star => star.veil === veilOf(a, shadow))]).find(([, mine]) => mine.length);
   [eye] = hit || accounts;
@@ -235,7 +213,7 @@ function shine(text) {
     $(id).setAttribute('cy', y);
     $(id).removeAttribute('visibility');
   }
-  $('light').setAttribute('r', days);                               // its light spreads one unit a day
+  $('light').setAttribute('r', days);
   $('sky').setAttribute('aria-label', 'A black square with the hole you pierced');
   signed = open = undefined;
   say(text);
@@ -250,22 +228,19 @@ async function pierce() {
   }
   show();
 
-  // An eye with no ether goes straight to the artist: the signed pierce is not shown to the wallet's network
-  // before it is carried. (The wallet asks the eye's balance all the time anyway.)
   const balance = BigInt(await ask('eth_getBalance', eye, 'latest'));
   if (!balance) {
     open = true;
     return say('Your wallet has no ether left to pay the fee for sending. Copy the text below and send it to the artist, who will deliver it to the square for you.');
   }
-  if (open) return;                                                 // meanwhile the member chose the artist
+  if (open) return;
 
-  // try it first, sending nothing: a refused pierce would reveal you and light nothing
   const tx = { from: eye, to: FIRMAMENT, data: calldata(signed) };
   say('Checking that all is well before anything is sent…');
   try { await ask('eth_call', tx, 'latest'); } catch (e) {
     if (!reverted(e)) throw Error('Your wallet’s network did not answer, and nothing was sent. Please try again. (' + told(e) + ')');
     const now = await read(signed.star);
-    if (now && lit(now)) { found = now; return shine('Your star is already shining.'); }   // someone already carried it
+    if (now && lit(now)) { found = now; return shine('Your star is already shining.'); }
     signed = undefined;
     return say('The check failed, so nothing was sent: the network would have refused it. This can happen when the message was signed by an address other than the first address of your words. (' + told(e) + ')');
   }
@@ -275,7 +250,7 @@ async function pierce() {
     open = true;
     return say('Today the fee for sending is more than the ether in your wallet. You can open the link again on another day, or copy the text below and send it to the artist, who will deliver it to the square for you.');
   }
-  const nonce = Number(await ask('eth_getTransactionCount', tx.from, 'pending'));   // the one this send takes, as a rule
+  const nonce = Number(await ask('eth_getTransactionCount', tx.from, 'pending'));
   if (open) return;
   const hash = await ask('eth_sendTransaction', { ...tx, ...terms });
   say('Sent. Waiting for the network to confirm it… If nothing happens for a long time, you can send it to the artist instead.');
@@ -289,10 +264,9 @@ async function pierce() {
   shine('Done. The light has begun to spread.');
 }
 
-// The most sending can cost, in the very terms the wallet is given; nothing when the eye cannot pay it today.
 async function cost(tx, balance) {
   const [gas, price, head] = await Promise.all([ask('eth_estimateGas', tx), ask('eth_gasPrice'), ask('eth_getBlockByNumber', 'latest', false)]);
-  const limit = BigInt(gas) * 11n / 10n;                            // a pierce costs the same gas every time (~57,000)
+  const limit = BigInt(gas) * 11n / 10n;
   let terms;
   if (head?.baseFeePerGas == null) terms = { gasPrice: BigInt(price) * 5n / 4n };
   else {
@@ -304,9 +278,6 @@ async function cost(tx, balance) {
   return Object.fromEntries(Object.entries({ gas: limit, ...terms }).map(([k, v]) => [k, hex(v)]));
 }
 
-// The star itself is the answer: it is lit even if the wallet sped the transaction up under another hash.
-// The member may also cancel it in the wallet, or replace it with another: once the eye's nonce has passed this
-// send's and the star is still dark on two reads in a row, it will not light from here ('gone').
 async function watch(hash, i, from, nonce) {
   nonce = await ask('eth_getTransactionByHash', hash).then(t => t ? Number(t.nonce) : nonce, () => nonce);
   for (let dark = 0; ; await new Promise(r => setTimeout(r, 4000))) {
